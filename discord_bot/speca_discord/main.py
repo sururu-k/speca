@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from .config import BotConfig, get_config, set_config
 from .panels.control_panel import ControlPanelView
+from .services.compat import enforce, run_startup_probe
 
 
 def _setup_logging(level: int) -> None:
@@ -58,6 +59,14 @@ def build_bot(cfg: BotConfig | None = None) -> commands.Bot:
             log.info("slash commands synced to guild %d", cfg.guild_id)
         except discord.HTTPException as e:
             log.error("slash command sync failed: %s", e)
+        # Crash recovery — re-attach to every run that wasn't marked stopped.
+        # Done after slash-sync so /speca-status reflects reality immediately.
+        runs_cog = getattr(bot, "runs_cog", None)
+        if runs_cog is not None:
+            try:
+                await runs_cog.resume_persisted_runs()
+            except Exception:
+                log.exception("auto-resume pass failed")
 
     return bot
 
@@ -76,6 +85,12 @@ async def _load_cogs(bot: commands.Bot) -> None:
 async def run_bot() -> None:
     cfg = get_config()
     bot = build_bot(cfg)
+    # Compatibility probe runs before any Discord I/O so a broken upstream
+    # speca surface is reported in the startup log, not when the operator
+    # invokes a slash command. Warn mode by default; strict (CI) opts in
+    # via SPECA_DISCORD_COMPAT_STRICT=1.
+    report = await run_startup_probe(cfg.speca_repo_path)
+    enforce(report)
     await _load_cogs(bot)
     try:
         await bot.start(cfg.discord_token)

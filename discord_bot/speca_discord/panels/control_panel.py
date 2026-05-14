@@ -21,11 +21,18 @@ class ControlPanelView(ui.View):
         custom_id="speca:start-run",
     )
     async def start_run(self, interaction: discord.Interaction, _: ui.Button) -> None:
-        await interaction.response.send_message(
-            "Use `/speca-run target_repo:<owner/name> target_commit:<sha>`. "
-            "The button-driven wizard is on the roadmap for the next slice.",
-            ephemeral=True,
-        )
+        # Open a modal so the operator never has to type a slash command.
+        from ..cogs.runs import RunsCog
+        from .start_run_modal import StartRunModal
+
+        cog = interaction.client.get_cog("RunsCog") if hasattr(interaction.client, "get_cog") else None
+        if not isinstance(cog, RunsCog):
+            await interaction.response.send_message(
+                "RunsCog is not loaded; restart the bot or run `/speca-help`.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(StartRunModal(cog))
 
     @ui.button(
         label="List runs",
